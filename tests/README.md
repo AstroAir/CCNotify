@@ -55,7 +55,7 @@ python run_tests.py verify
 使用生成的JSON文件手动测试单个事件：
 
 ```bash
-cat test_data/individual_events/scenario_1/01_userpromptsubmit.json | python ../prompt_tracker.py
+cat test_data/individual_events/scenario_1/01_userpromptsubmit.json | python ../ccnotify.py
 ```
 
 ## 测试场景说明
@@ -118,7 +118,7 @@ cat test_data/individual_events/scenario_1/01_userpromptsubmit.json | python ../
 
 ```bash
 # 连接到数据库
-sqlite3 ~/.claude/prompt_tracker.db
+sqlite3 ~/.claude/ccnotify/ccnotify.db
 
 # 查看所有记录
 SELECT session_id, seq, dirname, prompt, 

@@ -12,9 +12,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-# Add parent directory to path to import prompt_tracker
+# Add parent directory to path to import ccnotify
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from prompt_tracker import ClaudePromptTracker
+from ccnotify import ClaudePromptTracker
 
 
 class TestClaudePromptTracker(unittest.TestCase):
@@ -29,14 +29,38 @@ class TestClaudePromptTracker(unittest.TestCase):
         
     def tearDown(self):
         """Clean up test environment"""
-        if self.test_db_path.exists():
-            self.test_db_path.unlink()
-        os.rmdir(self.temp_dir)
+        import gc
+        import time
+
+        # Force garbage collection to close any open database connections
+        gc.collect()
+
+        # Try to delete the database file, with retry for Windows file locking
+        max_retries = 3
+        for i in range(max_retries):
+            try:
+                if self.test_db_path.exists():
+                    self.test_db_path.unlink()
+                break
+            except PermissionError:
+                if i < max_retries - 1:
+                    time.sleep(0.1)
+                    gc.collect()
+                else:
+                    # If we still can't delete, just skip it
+                    pass
+
+        # Try to remove the temp directory
+        try:
+            os.rmdir(self.temp_dir)
+        except (OSError, PermissionError):
+            # Directory might not be empty or file is locked, skip
+            pass
     
     def create_test_tracker(self):
         """Create a tracker instance with test database"""
         tracker = ClaudePromptTracker()
-        tracker.db_path = self.test_db_path
+        tracker.db_path = str(self.test_db_path)
         tracker.init_database()
         return tracker
     
@@ -67,20 +91,20 @@ class TestClaudePromptTracker(unittest.TestCase):
         }
         
         tracker.handle_user_prompt_submit(test_data)
-        
+
         # Verify record was inserted
         with sqlite3.connect(self.test_db_path) as conn:
             cursor = conn.execute("""
-                SELECT session_id, prompt, dirname, seq
+                SELECT session_id, prompt, cwd, seq
                 FROM prompt
                 WHERE session_id = ?
             """, (test_data["session_id"],))
-            
+
             row = cursor.fetchone()
             self.assertIsNotNone(row)
             self.assertEqual(row[0], "session_001")
             self.assertEqual(row[1], test_data["prompt"])
-            self.assertEqual(row[2], "my-app")
+            self.assertEqual(row[2], "/Users/developer/projects/my-app")
             self.assertEqual(row[3], 1)  # First record should have seq=1
     
     def test_seq_auto_increment(self):
@@ -111,11 +135,11 @@ class TestClaudePromptTracker(unittest.TestCase):
             self.assertEqual(rows[1][0], 2)
             self.assertEqual(rows[2][0], 3)
     
-    @patch('subprocess.run')
-    def test_stop_event_handling(self, mock_subprocess):
+    @patch('ccnotify.ClaudePromptTracker.send_notification')
+    def test_stop_event_handling(self, mock_send_notification):
         """Test Stop event handling with notification"""
         tracker = self.create_test_tracker()
-        
+
         # First insert a prompt
         submit_data = {
             "session_id": "session_001",
@@ -124,36 +148,36 @@ class TestClaudePromptTracker(unittest.TestCase):
             "hook_event_name": "UserPromptSubmit"
         }
         tracker.handle_user_prompt_submit(submit_data)
-        
+
         # Then handle stop event
         stop_data = {
             "session_id": "session_001",
             "hook_event_name": "Stop"
         }
         tracker.handle_stop(stop_data)
-        
+
         # Verify stoped_at was updated
         with sqlite3.connect(self.test_db_path) as conn:
             cursor = conn.execute("""
                 SELECT stoped_at FROM prompt
                 WHERE session_id = ?
             """, (submit_data["session_id"],))
-            
+
             row = cursor.fetchone()
             self.assertIsNotNone(row)
             self.assertIsNotNone(row[0])  # stoped_at should be set
-        
+
         # Verify notification was sent
-        mock_subprocess.assert_called_once()
-        call_args = mock_subprocess.call_args[0][0]
-        self.assertEqual(call_args[0], 'terminal-notifier')
-        self.assertIn('test-app', call_args)
+        mock_send_notification.assert_called_once()
+        call_args = mock_send_notification.call_args
+        # Check that title contains the directory name
+        self.assertIn('test-app', call_args[1]['title'])
     
-    @patch('subprocess.run')
-    def test_notification_event_handling(self, mock_subprocess):
+    @patch('ccnotify.ClaudePromptTracker.send_notification')
+    def test_notification_event_handling(self, mock_send_notification):
         """Test Notification event handling for waiting input"""
         tracker = self.create_test_tracker()
-        
+
         # First insert a prompt
         submit_data = {
             "session_id": "session_002",
@@ -162,7 +186,7 @@ class TestClaudePromptTracker(unittest.TestCase):
             "hook_event_name": "UserPromptSubmit"
         }
         tracker.handle_user_prompt_submit(submit_data)
-        
+
         # Then handle notification event
         notification_data = {
             "session_id": "session_002",
@@ -171,23 +195,23 @@ class TestClaudePromptTracker(unittest.TestCase):
             "hook_event_name": "Notification"
         }
         tracker.handle_notification(notification_data)
-        
+
         # Verify lastWaitUserAt was updated
         with sqlite3.connect(self.test_db_path) as conn:
             cursor = conn.execute("""
                 SELECT lastWaitUserAt FROM prompt
                 WHERE session_id = ?
             """, (submit_data["session_id"],))
-            
+
             row = cursor.fetchone()
             self.assertIsNotNone(row)
             self.assertIsNotNone(row[0])  # lastWaitUserAt should be set
-        
+
         # Verify notification was sent
-        mock_subprocess.assert_called_once()
-        call_args = mock_subprocess.call_args[0][0]
-        self.assertEqual(call_args[0], 'terminal-notifier')
-        self.assertIn('web-app', call_args)
+        mock_send_notification.assert_called_once()
+        call_args = mock_send_notification.call_args
+        # Check that title contains the directory name
+        self.assertIn('web-app', call_args[1]['title'])
     
     def test_duration_calculation(self):
         """Test duration calculation functionality"""
@@ -251,7 +275,8 @@ class TestMainFunction(unittest.TestCase):
     """Test the main function and JSON processing"""
     
     @patch('sys.stdin')
-    @patch('prompt_tracker.ClaudePromptTracker')
+    @patch('sys.argv', ['ccnotify.py', 'UserPromptSubmit'])
+    @patch('ccnotify.ClaudePromptTracker')
     def test_main_user_prompt_submit(self, mock_tracker_class, mock_stdin):
         """Test main function with UserPromptSubmit event"""
         # Mock stdin input
@@ -262,31 +287,31 @@ class TestMainFunction(unittest.TestCase):
             "hook_event_name": "UserPromptSubmit"
         }
         mock_stdin.read.return_value = json.dumps(test_data)
-        
+
         # Mock tracker instance
         mock_tracker = MagicMock()
         mock_tracker_class.return_value = mock_tracker
-        
+
         # Import and run main
-        from prompt_tracker import main
+        from ccnotify import main
         main()
-        
+
         # Verify tracker was called correctly
         mock_tracker.handle_user_prompt_submit.assert_called_once_with(test_data)
     
     @patch('sys.stdin')
-    @patch('builtins.print')
-    def test_main_invalid_json(self, mock_print, mock_stdin):
+    @patch('sys.argv', ['ccnotify.py', 'UserPromptSubmit'])
+    def test_main_invalid_json(self, mock_stdin):
         """Test main function with invalid JSON"""
         mock_stdin.read.return_value = "invalid json"
-        
-        from prompt_tracker import main
-        main()
-        
-        # Should print error message
-        mock_print.assert_called()
-        args = mock_print.call_args[0]
-        self.assertIn("JSON decode error", args[0])
+
+        from ccnotify import main
+
+        # Should exit with error code
+        with self.assertRaises(SystemExit) as cm:
+            main()
+
+        self.assertEqual(cm.exception.code, 1)
 
 
 if __name__ == '__main__':

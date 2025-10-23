@@ -17,7 +17,7 @@ class PromptTrackerTestRunner:
     """Test runner for prompt tracker system"""
     
     def __init__(self):
-        self.script_path = Path(__file__).parent.parent / "prompt_tracker.py"
+        self.script_path = Path(__file__).parent.parent / "ccnotify.py"
         self.test_data_dir = Path(__file__).parent / "test_data"
         
     def run_single_event(self, event_data, delay=0.5):
@@ -95,9 +95,9 @@ class PromptTrackerTestRunner:
         """Verify database contents after testing"""
         import sqlite3
         from pathlib import Path
-        
-        db_path = Path.home() / ".claude" / "prompt_tracker.db"
-        
+
+        db_path = Path.home() / ".claude" / "ccnotify" / "ccnotify.db"
+
         if not db_path.exists():
             print("Database file not found!")
             return

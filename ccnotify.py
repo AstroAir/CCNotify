@@ -10,8 +10,79 @@ import json
 import sqlite3
 import subprocess
 import logging
+import platform
+import shutil
 from logging.handlers import TimedRotatingFileHandler
 from datetime import datetime
+
+# Try to import plyer for cross-platform notifications
+try:
+    from plyer import notification as plyer_notification
+    PLYER_AVAILABLE = True
+except ImportError:
+    PLYER_AVAILABLE = False
+
+
+def get_platform():
+    """
+    Detect the current operating system platform.
+
+    Returns:
+        str: 'windows', 'linux', 'darwin' (macOS), or 'unknown'
+    """
+    system = platform.system().lower()
+    if system == 'darwin':
+        return 'darwin'
+    elif system == 'linux':
+        return 'linux'
+    elif system == 'windows':
+        return 'windows'
+    else:
+        return 'unknown'
+
+
+def get_vscode_command():
+    """
+    Get the VS Code command for the current platform.
+
+    Returns:
+        str: Path to VS Code command, or None if not found
+    """
+    current_platform = get_platform()
+
+    # Try to find 'code' command in PATH
+    code_path = shutil.which('code')
+    if code_path:
+        return code_path
+
+    # Platform-specific fallback paths
+    if current_platform == 'darwin':
+        # macOS common paths
+        possible_paths = [
+            '/usr/local/bin/code',
+            '/opt/homebrew/bin/code',
+        ]
+    elif current_platform == 'windows':
+        # Windows common paths
+        possible_paths = [
+            'code.cmd',
+            'code.exe',
+        ]
+    elif current_platform == 'linux':
+        # Linux common paths
+        possible_paths = [
+            '/usr/bin/code',
+            '/usr/local/bin/code',
+        ]
+    else:
+        possible_paths = []
+
+    # Check fallback paths
+    for path in possible_paths:
+        if shutil.which(path) or os.path.exists(path):
+            return path
+
+    return None
 
 
 class ClaudePromptTracker:
@@ -20,6 +91,19 @@ class ClaudePromptTracker:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         self.db_path = os.path.join(script_dir, "ccnotify.db")
         self.setup_logging()
+
+        # Log platform information
+        current_platform = get_platform()
+        logging.info(f"CCNotify initialized on platform: {current_platform}")
+        logging.info(f"Python version: {sys.version}")
+        logging.info(f"Plyer available: {PLYER_AVAILABLE}")
+
+        vscode_cmd = get_vscode_command()
+        if vscode_cmd:
+            logging.info(f"VS Code command found: {vscode_cmd}")
+        else:
+            logging.warning("VS Code command not found in PATH")
+
         self.init_database()
 
     def setup_logging(self):
@@ -50,7 +134,8 @@ class ClaudePromptTracker:
 
     def init_database(self):
         """Create tables and triggers if they don't exist"""
-        with sqlite3.connect(self.db_path) as conn:
+        conn = sqlite3.connect(self.db_path)
+        try:
             # Create main table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS prompt (
@@ -82,6 +167,8 @@ class ClaudePromptTracker:
             """)
 
             conn.commit()
+        finally:
+            conn.close()
 
     def handle_user_prompt_submit(self, data):
         """Handle UserPromptSubmit event - insert new prompt record"""
@@ -89,7 +176,14 @@ class ClaudePromptTracker:
         prompt = data.get("prompt", "")
         cwd = data.get("cwd", "")
 
-        with sqlite3.connect(self.db_path) as conn:
+        # Validate required fields
+        if not session_id:
+            logging.warning("Missing required field: session_id")
+            return
+
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path)
             conn.execute(
                 """
                 INSERT INTO prompt (session_id, prompt, cwd)
@@ -98,14 +192,20 @@ class ClaudePromptTracker:
                 (session_id, prompt, cwd),
             )
             conn.commit()
-
-        logging.info(f"Recorded prompt for session {session_id}")
+            logging.info(f"Recorded prompt for session {session_id}")
+        except sqlite3.Error as e:
+            logging.error(f"Database error in handle_user_prompt_submit: {e}")
+        finally:
+            if conn:
+                conn.close()
 
     def handle_stop(self, data):
         """Handle Stop event - update completion time and send notification"""
         session_id = data.get("session_id")
 
-        with sqlite3.connect(self.db_path) as conn:
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path)
             # Find the latest unfinished record for this session
             cursor = conn.execute(
                 """
@@ -150,6 +250,9 @@ class ClaudePromptTracker:
                 logging.info(
                     f"Task completed for session {session_id}, job#{seq}, duration: {duration}"
                 )
+        finally:
+            if conn:
+                conn.close()
 
     def handle_notification(self, data):
         """Handle Notification event - check for various notification types and send notifications"""
@@ -172,9 +275,7 @@ class ClaudePromptTracker:
         ):
             subtitle = "Waiting for input"
             should_update_db = True
-            should_notify = (
-                False  # Suppress notification - Stop handler will send "job done"
-            )
+            should_notify = True  # Send notification to alert user
         elif "permission" in message_lower:
             subtitle = "Permission Required"
         elif "approval" in message_lower or "choose an option" in message_lower:
@@ -185,7 +286,9 @@ class ClaudePromptTracker:
 
         # Update database for waiting notifications
         if should_update_db:
-            with sqlite3.connect(self.db_path) as conn:
+            conn = None
+            try:
+                conn = sqlite3.connect(self.db_path)
                 # Fix: Use subquery instead of ORDER BY/LIMIT in UPDATE
                 conn.execute(
                     """
@@ -201,7 +304,10 @@ class ClaudePromptTracker:
                     (session_id,),
                 )
                 conn.commit()
-            logging.info(f"Updated lastWaitUserAt for session {session_id}")
+                logging.info(f"Updated lastWaitUserAt for session {session_id}")
+            finally:
+                if conn:
+                    conn.close()
 
         # Send notification only if should_notify is True
         if should_notify:
@@ -218,7 +324,9 @@ class ClaudePromptTracker:
 
     def calculate_duration_from_db(self, record_id):
         """Calculate duration for a completed record"""
-        with sqlite3.connect(self.db_path) as conn:
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path)
             cursor = conn.execute(
                 """
                 SELECT created_at, stoped_at
@@ -232,7 +340,10 @@ class ClaudePromptTracker:
             if row and row[1]:
                 return self.calculate_duration(row[0], row[1])
 
-        return "Unknown"
+            return "Unknown"
+        finally:
+            if conn:
+                conn.close()
 
     def calculate_duration(self, start_time, end_time):
         """Calculate human-readable duration between two timestamps"""
@@ -251,31 +362,56 @@ class ClaudePromptTracker:
             total_seconds = int(duration.total_seconds())
 
             if total_seconds < 60:
-                return f"{total_seconds}s"
+                return f"{total_seconds}秒"
             elif total_seconds < 3600:
                 minutes = total_seconds // 60
                 seconds = total_seconds % 60
                 if seconds > 0:
-                    return f"{minutes}m{seconds}s"
+                    return f"{minutes}分{seconds}秒"
                 else:
-                    return f"{minutes}m"
+                    return f"{minutes}分钟"
             else:
                 hours = total_seconds // 3600
                 minutes = (total_seconds % 3600) // 60
                 if minutes > 0:
-                    return f"{hours}h{minutes}m"
+                    return f"{hours}小时{minutes}分钟"
                 else:
-                    return f"{hours}h"
+                    return f"{hours}小时"
         except Exception as e:
             logging.error(f"Error calculating duration: {e}")
             return "Unknown"
 
-    def send_notification(self, title, subtitle, cwd=None):
-        """Send macOS notification using terminal-notifier"""
-        from datetime import datetime
+    def _send_notification_plyer(self, title, message, cwd=None):
+        """
+        Send notification using plyer (cross-platform).
 
-        current_time = datetime.now().strftime("%B %d, %Y at %H:%M")
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not PLYER_AVAILABLE:
+            return False
 
+        try:
+            # Plyer doesn't support click actions, so we just send the notification
+            plyer_notification.notify(
+                title=title,
+                message=message,
+                app_name='CCNotify',
+                timeout=10  # seconds
+            )
+            logging.info(f"Notification sent via plyer: {title} - {message}")
+            return True
+        except Exception as e:
+            logging.warning(f"Plyer notification failed: {e}")
+            return False
+
+    def _send_notification_macos(self, title, message, cwd=None):
+        """
+        Send notification on macOS using terminal-notifier.
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
         try:
             cmd = [
                 "terminal-notifier",
@@ -283,19 +419,165 @@ class ClaudePromptTracker:
                 "default",
                 "-title",
                 title,
-                "-subtitle",
-                f"{subtitle}\n{current_time}",
+                "-message",
+                message,
             ]
 
+            # Add click action to open VS Code if cwd is provided
             if cwd:
-                cmd.extend(["-execute", f'/usr/local/bin/code "{cwd}"'])
+                vscode_cmd = get_vscode_command()
+                if vscode_cmd:
+                    cmd.extend(["-execute", f'{vscode_cmd} "{cwd}"'])
 
-            subprocess.run(cmd, check=False, capture_output=True)
-            logging.info(f"Notification sent: {title} - {subtitle}")
+            result = subprocess.run(cmd, check=False, capture_output=True, timeout=5)
+            if result.returncode == 0:
+                logging.info(f"Notification sent via terminal-notifier: {title} - {message}")
+                return True
+            else:
+                logging.warning(f"terminal-notifier returned non-zero exit code: {result.returncode}")
+                return False
         except FileNotFoundError:
-            logging.warning("terminal-notifier not found, notification skipped")
+            logging.warning("terminal-notifier not found")
+            return False
+        except subprocess.TimeoutExpired:
+            logging.warning("terminal-notifier timed out")
+            return False
         except Exception as e:
-            logging.error(f"Error sending notification: {e}")
+            logging.warning(f"macOS notification failed: {e}")
+            return False
+
+    def _send_notification_linux(self, title, message, cwd=None):
+        """
+        Send notification on Linux using notify-send.
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            cmd = ["notify-send", title, message, "-u", "normal", "-t", "10000"]
+
+            result = subprocess.run(cmd, check=False, capture_output=True, timeout=5)
+            if result.returncode == 0:
+                logging.info(f"Notification sent via notify-send: {title} - {message}")
+                return True
+            else:
+                logging.warning(f"notify-send returned non-zero exit code: {result.returncode}")
+                return False
+        except FileNotFoundError:
+            logging.warning("notify-send not found (install libnotify-bin on Debian/Ubuntu)")
+            return False
+        except subprocess.TimeoutExpired:
+            logging.warning("notify-send timed out")
+            return False
+        except Exception as e:
+            logging.warning(f"Linux notification failed: {e}")
+            return False
+
+    def _send_notification_windows(self, title, message, cwd=None):
+        """
+        Send notification on Windows using PowerShell.
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Use PowerShell to show a Windows toast notification
+            ps_script = f"""
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
+
+$template = @"
+<toast>
+    <visual>
+        <binding template="ToastText02">
+            <text id="1">{title}</text>
+            <text id="2">{message}</text>
+        </binding>
+    </visual>
+</toast>
+"@
+
+$xml = New-Object Windows.Data.Xml.Dom.XmlDocument
+$xml.LoadXml($template)
+$toast = New-Object Windows.UI.Notifications.ToastNotification $xml
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("CCNotify").Show($toast)
+"""
+
+            result = subprocess.run(
+                ["powershell", "-Command", ps_script],
+                check=False,
+                capture_output=True,
+                timeout=5
+            )
+
+            if result.returncode == 0:
+                logging.info(f"Notification sent via PowerShell: {title} - {message}")
+                return True
+            else:
+                logging.warning(f"PowerShell notification returned non-zero exit code: {result.returncode}")
+                return False
+        except FileNotFoundError:
+            logging.warning("PowerShell not found")
+            return False
+        except subprocess.TimeoutExpired:
+            logging.warning("PowerShell notification timed out")
+            return False
+        except Exception as e:
+            logging.warning(f"Windows notification failed: {e}")
+            return False
+
+    def send_notification(self, title, subtitle, cwd=None):
+        """
+        Send cross-platform desktop notification.
+
+        Tries multiple notification methods in order of preference:
+        1. Platform-specific native method (terminal-notifier, notify-send, PowerShell)
+        2. Plyer (cross-platform library)
+        3. Logs warning if all methods fail
+
+        Args:
+            title: Notification title
+            subtitle: Notification subtitle/message
+            cwd: Optional working directory (for click-to-open in VS Code)
+        """
+        current_time = datetime.now().strftime("%B %d, %Y at %H:%M")
+        message = f"{subtitle}\n{current_time}"
+
+        current_platform = get_platform()
+        logging.info(f"Sending notification on platform: {current_platform}")
+
+        success = False
+
+        # Try platform-specific method first
+        if current_platform == 'darwin':
+            success = self._send_notification_macos(title, message, cwd)
+            if not success:
+                # Fallback to plyer on macOS
+                success = self._send_notification_plyer(title, message, cwd)
+        elif current_platform == 'linux':
+            success = self._send_notification_linux(title, message, cwd)
+            if not success:
+                # Fallback to plyer on Linux
+                success = self._send_notification_plyer(title, message, cwd)
+        elif current_platform == 'windows':
+            # Try plyer first on Windows (more reliable)
+            success = self._send_notification_plyer(title, message, cwd)
+            if not success:
+                # Fallback to PowerShell
+                success = self._send_notification_windows(title, message, cwd)
+        else:
+            # Unknown platform, try plyer
+            success = self._send_notification_plyer(title, message, cwd)
+
+        if not success:
+            logging.warning(
+                f"All notification methods failed. "
+                f"Title: {title}, Message: {subtitle}. "
+                f"Consider installing: "
+                f"macOS: 'brew install terminal-notifier', "
+                f"Linux: 'sudo apt install libnotify-bin', "
+                f"All platforms: 'pip install plyer'"
+            )
 
 
 def validate_input_data(data, expected_event_name):

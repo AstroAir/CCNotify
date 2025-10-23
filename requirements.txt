@@ -1,0 +1,13 @@
+# CCNotify Dependencies
+#
+# NOTE: This file is maintained for backward compatibility with existing
+# installation instructions. For modern Python project management, see
+# pyproject.toml which is the source of truth for dependencies.
+#
+# You can install dependencies using either:
+#   pip install -r requirements.txt  (traditional method)
+#   uv sync                          (modern method using pyproject.toml)
+#
+# Cross-platform desktop notification library
+plyer>=2.0.0
+
