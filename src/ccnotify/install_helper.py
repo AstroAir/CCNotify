@@ -36,25 +36,27 @@ def get_install_path():
     return install_dir, script_name
 
 
-def backup_settings(settings_path):
+def backup_settings(settings_path, silent=False):
     """
     Create a backup of settings.json with timestamp
-    
+
     Args:
         settings_path: Path to settings.json
-        
+        silent: If True, suppress informational output
+
     Returns:
         Path to backup file, or None if no backup was needed
     """
     if not settings_path.exists():
         return None
-    
+
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     backup_path = settings_path.parent / f'settings.json.backup.{timestamp}'
-    
+
     try:
         shutil.copy2(settings_path, backup_path)
-        print(f"✓ Backed up settings.json to: {backup_path}")
+        if not silent:
+            print(f"✓ Backed up settings.json to: {backup_path}")
         return backup_path
     except Exception as e:
         print(f"✗ Failed to backup settings.json: {e}", file=sys.stderr)
@@ -139,38 +141,41 @@ def is_hook_installed(hooks_array, script_path, hook_type):
     return False
 
 
-def merge_hooks(settings, script_path):
+def merge_hooks(settings, script_path, silent=False):
     """
     Merge CCNotify hooks into settings
-    
+
     Args:
         settings: Current settings dictionary
         script_path: Path to the ccnotify.py script
-        
+        silent: If True, suppress informational output
+
     Returns:
         Updated settings dictionary, and count of hooks added
     """
     if 'hooks' not in settings:
         settings['hooks'] = {}
-    
+
     hooks_added = 0
     hook_types = ['UserPromptSubmit', 'Stop', 'Notification']
-    
+
     for hook_type in hook_types:
         if hook_type not in settings['hooks']:
             settings['hooks'][hook_type] = []
-        
+
         # Check if hook is already installed
         if is_hook_installed(settings['hooks'][hook_type], script_path, hook_type):
-            print(f"  • {hook_type}: Already installed, skipping")
+            if not silent:
+                print(f"  • {hook_type}: Already installed, skipping")
             continue
-        
+
         # Add the hook
         hook_config = create_hook_config(script_path, hook_type)
         settings['hooks'][hook_type].append(hook_config)
         hooks_added += 1
-        print(f"  • {hook_type}: Added")
-    
+        if not silent:
+            print(f"  • {hook_type}: Added")
+
     return settings, hooks_added
 
 
@@ -200,23 +205,25 @@ def save_settings(settings_path, settings):
         return False
 
 
-def restore_backup(settings_path, backup_path):
+def restore_backup(settings_path, backup_path, silent=False):
     """
     Restore settings.json from backup
-    
+
     Args:
         settings_path: Path to settings.json
         backup_path: Path to backup file
-        
+        silent: If True, suppress informational output
+
     Returns:
         True if successful, False otherwise
     """
     if not backup_path or not backup_path.exists():
         return False
-    
+
     try:
         shutil.copy2(backup_path, settings_path)
-        print(f"✓ Restored settings.json from backup")
+        if not silent:
+            print(f"✓ Restored settings.json from backup")
         return True
     except Exception as e:
         print(f"✗ Failed to restore backup: {e}", file=sys.stderr)
@@ -247,128 +254,138 @@ def validate_settings(settings):
     return True
 
 
-def install_hooks(dry_run=False):
+def install_hooks(dry_run=False, silent=False):
     """
     Install CCNotify hooks into settings.json
-    
+
     Args:
         dry_run: If True, show what would be done without making changes
-        
+        silent: If True, suppress informational output (errors still shown)
+
     Returns:
         0 on success, non-zero on failure
     """
     settings_path = get_settings_path()
     install_dir, script_path = get_install_path()
-    
-    print(f"CCNotify Configuration Helper")
-    print(f"Settings file: {settings_path}")
-    print(f"Script path: {script_path}")
-    
-    if dry_run:
-        print("\n[DRY RUN MODE - No changes will be made]")
-    
-    print()
+
+    if not silent:
+        print(f"CCNotify Configuration Helper")
+        print(f"Settings file: {settings_path}")
+        print(f"Script path: {script_path}")
+
+        if dry_run:
+            print("\n[DRY RUN MODE - No changes will be made]")
+
+        print()
     
     # Load current settings
     settings = load_settings(settings_path)
     if settings is None:
-        print("\n✗ Cannot proceed with invalid settings.json")
-        print("  Please fix the JSON syntax errors and try again.")
+        print("\n✗ Cannot proceed with invalid settings.json", file=sys.stderr)
+        print("  Please fix the JSON syntax errors and try again.", file=sys.stderr)
         return 1
-    
+
     # Backup existing settings
     backup_path = None
     if not dry_run and settings_path.exists():
-        backup_path = backup_settings(settings_path)
+        backup_path = backup_settings(settings_path, silent=silent)
         if backup_path is None and settings:
-            print("✗ Failed to create backup, aborting for safety")
+            print("✗ Failed to create backup, aborting for safety", file=sys.stderr)
             return 1
-    
+
     # Merge hooks
-    print("Configuring hooks:")
-    original_settings = json.dumps(settings, sort_keys=True)
-    updated_settings, hooks_added = merge_hooks(settings, script_path)
-    
+    if not silent:
+        print("Configuring hooks:")
+    updated_settings, hooks_added = merge_hooks(settings, script_path, silent=silent)
+
     if hooks_added == 0:
-        print("\n✓ All hooks are already installed")
+        if not silent:
+            print("\n✓ All hooks are already installed")
         return 0
-    
+
     # Validate merged settings
     if not validate_settings(updated_settings):
-        print("\n✗ Validation failed: Invalid settings structure")
+        print("\n✗ Validation failed: Invalid settings structure", file=sys.stderr)
         if backup_path:
-            restore_backup(settings_path, backup_path)
+            restore_backup(settings_path, backup_path, silent=silent)
         return 1
-    
+
     # Save updated settings
     if not dry_run:
         if save_settings(settings_path, updated_settings):
-            print(f"\n✓ Successfully configured {hooks_added} hook(s)")
-            print(f"✓ Settings saved to: {settings_path}")
+            if not silent:
+                print(f"\n✓ Successfully configured {hooks_added} hook(s)")
+                print(f"✓ Settings saved to: {settings_path}")
             return 0
         else:
-            print("\n✗ Failed to save settings")
+            print("\n✗ Failed to save settings", file=sys.stderr)
             if backup_path:
-                restore_backup(settings_path, backup_path)
+                restore_backup(settings_path, backup_path, silent=silent)
             return 1
     else:
-        print(f"\n[DRY RUN] Would configure {hooks_added} hook(s)")
+        if not silent:
+            print(f"\n[DRY RUN] Would configure {hooks_added} hook(s)")
         return 0
 
 
-def remove_hooks(dry_run=False):
+def remove_hooks(dry_run=False, silent=False):
     """
     Remove CCNotify hooks from settings.json
-    
+
     Args:
         dry_run: If True, show what would be done without making changes
-        
+        silent: If True, suppress informational output (errors still shown)
+
     Returns:
         0 on success, non-zero on failure
     """
     settings_path = get_settings_path()
-    
-    print(f"CCNotify Configuration Helper - Uninstall")
-    print(f"Settings file: {settings_path}")
-    
-    if dry_run:
-        print("\n[DRY RUN MODE - No changes will be made]")
-    
-    print()
-    
+
+    if not silent:
+        print(f"CCNotify Configuration Helper - Uninstall")
+        print(f"Settings file: {settings_path}")
+
+        if dry_run:
+            print("\n[DRY RUN MODE - No changes will be made]")
+
+        print()
+
     if not settings_path.exists():
-        print("✓ No settings.json found, nothing to remove")
+        if not silent:
+            print("✓ No settings.json found, nothing to remove")
         return 0
-    
+
     # Load current settings
     settings = load_settings(settings_path)
     if settings is None:
-        print("\n✗ Cannot proceed with invalid settings.json")
+        print("\n✗ Cannot proceed with invalid settings.json", file=sys.stderr)
         return 1
-    
+
     if 'hooks' not in settings:
-        print("✓ No hooks configured, nothing to remove")
+        if not silent:
+            print("✓ No hooks configured, nothing to remove")
         return 0
-    
+
     # Backup existing settings
     backup_path = None
     if not dry_run:
-        backup_path = backup_settings(settings_path)
+        backup_path = backup_settings(settings_path, silent=silent)
         if backup_path is None:
-            print("✗ Failed to create backup, aborting for safety")
+            print("✗ Failed to create backup, aborting for safety", file=sys.stderr)
             return 1
-    
+
     # Remove CCNotify hooks
     hooks_removed = 0
     hook_types = ['UserPromptSubmit', 'Stop', 'Notification']
-    
-    print("Removing hooks:")
+
+    if not silent:
+        print("Removing hooks:")
     for hook_type in hook_types:
         if hook_type not in settings['hooks']:
             continue
-        
+
         original_count = len(settings['hooks'][hook_type])
-        
+
         # Filter out CCNotify hooks
         settings['hooks'][hook_type] = [
             hook_group for hook_group in settings['hooks'][hook_type]
@@ -378,29 +395,55 @@ def remove_hooks(dry_run=False):
                 if hook.get('type') == 'command'
             )
         ]
-        
+
         removed = original_count - len(settings['hooks'][hook_type])
         if removed > 0:
             hooks_removed += removed
-            print(f"  • {hook_type}: Removed {removed} hook(s)")
-    
+            if not silent:
+                print(f"  • {hook_type}: Removed {removed} hook(s)")
+
     if hooks_removed == 0:
-        print("✓ No CCNotify hooks found")
+        if not silent:
+            print("✓ No CCNotify hooks found")
         return 0
-    
+
     # Save updated settings
     if not dry_run:
         if save_settings(settings_path, settings):
-            print(f"\n✓ Successfully removed {hooks_removed} hook(s)")
+            if not silent:
+                print(f"\n✓ Successfully removed {hooks_removed} hook(s)")
             return 0
         else:
-            print("\n✗ Failed to save settings")
+            print("\n✗ Failed to save settings", file=sys.stderr)
             if backup_path:
-                restore_backup(settings_path, backup_path)
+                restore_backup(settings_path, backup_path, silent=silent)
             return 1
     else:
-        print(f"\n[DRY RUN] Would remove {hooks_removed} hook(s)")
+        if not silent:
+            print(f"\n[DRY RUN] Would remove {hooks_removed} hook(s)")
         return 0
+
+
+def auto_configure():
+    """
+    Auto-configuration entry point for console script.
+    Automatically runs the installation in silent mode.
+
+    This function is designed to be called as a console script entry point
+    after package installation, providing a simple command for users to
+    complete the configuration.
+
+    Returns:
+        Exit code (0 for success, non-zero for failure)
+    """
+    try:
+        return install_hooks(dry_run=False, silent=False)
+    except KeyboardInterrupt:
+        print("\n\nOperation cancelled by user")
+        return 130
+    except Exception as e:
+        print(f"\n✗ Unexpected error: {e}", file=sys.stderr)
+        return 1
 
 
 def main():
@@ -418,14 +461,19 @@ def main():
         action='store_true',
         help='Show what would be done without making changes'
     )
-    
+    parser.add_argument(
+        '--silent',
+        action='store_true',
+        help='Suppress informational output (errors still shown)'
+    )
+
     args = parser.parse_args()
-    
+
     try:
         if args.action == 'install':
-            return install_hooks(dry_run=args.dry_run)
+            return install_hooks(dry_run=args.dry_run, silent=args.silent)
         elif args.action == 'uninstall':
-            return remove_hooks(dry_run=args.dry_run)
+            return remove_hooks(dry_run=args.dry_run, silent=args.silent)
     except KeyboardInterrupt:
         print("\n\nOperation cancelled by user")
         return 130

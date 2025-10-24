@@ -41,8 +41,8 @@ git clone https://github.com/dazuiba/CCNotify.git
 cd CCNotify
 
 # Run the installation script
-chmod +x install.sh
-./install.sh
+chmod +x scripts/install.sh
+./scripts/install.sh
 ```
 
 #### Windows
@@ -53,7 +53,7 @@ git clone https://github.com/dazuiba/CCNotify.git
 cd CCNotify
 
 # Run the installation script
-.\install.ps1
+.\scripts\install.ps1
 ```
 
 The automated installer will:
@@ -65,12 +65,12 @@ The automated installer will:
 - ✓ Validate the installation
 
 **Silent Mode**: For non-interactive installation, use:
-- Unix: `./install.sh --silent`
-- Windows: `.\install.ps1 -Silent`
+- Unix: `./scripts/install.sh --silent`
+- Windows: `.\scripts\install.ps1 -Silent`
 
 **Dry Run**: To see what would be done without making changes:
-- Unix: `./install.sh --dry-run`
-- Windows: `.\install.ps1 -DryRun`
+- Unix: `./scripts/install.sh --dry-run`
+- Windows: `.\scripts\install.ps1 -DryRun`
 
 ---
 
@@ -523,14 +523,14 @@ The easiest way to uninstall CCNotify is using our automated uninstallation scri
 
 ```bash
 cd CCNotify
-./uninstall.sh
+./scripts/uninstall.sh
 ```
 
 **Windows:**
 
 ```powershell
 cd CCNotify
-.\uninstall.ps1
+.\scripts\uninstall.ps1
 ```
 
 The uninstaller will:
@@ -570,3 +570,50 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.claude\ccnotify"
 ```bash
 pip uninstall plyer
 ```
+
+## Project Structure
+
+```text
+CCNotify/
+├── src/ccnotify/          # Source code
+│   ├── __init__.py
+│   ├── ccnotify.py        # Main notification module
+│   ├── i18n.py            # Internationalization support
+│   └── install_helper.py  # Installation utilities
+├── tests/                 # Test files
+├── docs/                  # Documentation
+│   ├── DEVELOPMENT.md     # Development guide
+│   ├── TESTING.md         # Testing guide
+│   ├── INSTALL.md         # Detailed installation guide
+│   └── ENHANCEMENTS.md    # Enhancement documentation
+├── scripts/               # Installation scripts
+│   ├── install.sh         # Unix installation script
+│   ├── install.ps1        # Windows installation script
+│   ├── uninstall.sh       # Unix uninstallation script
+│   └── uninstall.ps1      # Windows uninstallation script
+├── .github/               # GitHub workflows and templates
+├── pyproject.toml         # Package configuration
+├── requirements.txt       # Dependencies
+├── CHANGELOG.md           # Version history
+├── CONTRIBUTING.md        # Contribution guidelines
+└── README.md              # This file
+```
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on:
+
+- Reporting bugs
+- Suggesting features
+- Submitting pull requests
+- Development setup
+- Coding standards
+- Testing requirements
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

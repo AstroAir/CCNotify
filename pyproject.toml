@@ -16,7 +16,6 @@ authors = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Operating System :: MacOS",
     "Operating System :: Microsoft :: Windows",
@@ -34,19 +33,55 @@ classifiers = [
 
 dependencies = [
     "plyer>=2.0.0",
+    "rich>=13.0.0",
 ]
+
+[project.scripts]
+ccnotify-configure = "ccnotify.install_helper:auto_configure"
 
 [project.urls]
 Homepage = "https://github.com/dazuiba/CCNotify"
 Repository = "https://github.com/dazuiba/CCNotify"
 Issues = "https://github.com/dazuiba/CCNotify/issues"
 Documentation = "https://github.com/dazuiba/CCNotify#readme"
-
-[tool.uv]
-# UV-specific configuration
-dev-dependencies = []
+Changelog = "https://github.com/dazuiba/CCNotify/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
-# Since this is a script-based tool, we don't need to specify packages
-py-modules = ["ccnotify"]
+# Use src layout
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+# Ruff configuration for linting and formatting
+line-length = 100
+target-version = "py37"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+]
+
+[tool.mypy]
+python_version = "3.7"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --strict-markers"
 

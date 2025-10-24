@@ -11,3 +11,6 @@
 # Cross-platform desktop notification library
 plyer>=2.0.0
 
+# Rich library for beautiful terminal formatting
+rich>=13.0.0
+

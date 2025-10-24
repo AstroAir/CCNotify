@@ -57,14 +57,17 @@ The automated installer will:
 #### Installation Options
 
 **Silent Mode** (non-interactive):
+
 - Unix: `./install.sh --silent`
 - Windows: `.\install.ps1 -Silent`
 
 **Dry Run** (preview without making changes):
+
 - Unix: `./install.sh --dry-run`
 - Windows: `.\install.ps1 -DryRun`
 
 **Help**:
+
 - Unix: `./install.sh --help`
 - Windows: `.\install.ps1 -Help`
 
@@ -85,16 +88,19 @@ This is optional but recommended for the best notification experience on macOS.
 The installer will offer to install `libnotify` for native Linux notifications:
 
 **Debian/Ubuntu:**
+
 ```bash
 sudo apt install libnotify-bin
 ```
 
 **Fedora/RHEL:**
+
 ```bash
 sudo dnf install libnotify
 ```
 
 **Arch Linux:**
+
 ```bash
 sudo pacman -S libnotify
 ```
@@ -120,11 +126,13 @@ You should see a desktop notification appear.
 **Error:** `Python is not installed` or `command not found: python`
 
 **Solution:**
+
 - Ensure Python 3.7+ is installed
 - Verify with: `python --version` or `python3 --version`
 - Add Python to your PATH if necessary
 
 **Installation:**
+
 - macOS: `brew install python3`
 - Linux: `sudo apt install python3` (Debian/Ubuntu)
 - Windows: Download from [python.org](https://www.python.org/downloads/)
@@ -134,6 +142,7 @@ You should see a desktop notification appear.
 **Error:** `pip is not available`
 
 **Solution:**
+
 - Try: `python -m ensurepip --upgrade`
 - Linux: `sudo apt install python3-pip`
 - Verify with: `python -m pip --version`
@@ -143,6 +152,7 @@ You should see a desktop notification appear.
 **Error:** `Permission denied` when running install.sh
 
 **Solution:**
+
 ```bash
 chmod +x install.sh
 ./install.sh
@@ -153,6 +163,7 @@ chmod +x install.sh
 **Error:** `settings.json contains invalid JSON`
 
 **Solution:**
+
 - The installer will refuse to proceed if settings.json has syntax errors
 - Fix the JSON syntax errors before running the installer
 - Use a JSON validator or editor with JSON support
@@ -178,11 +189,13 @@ After installation, if hooks don't work:
 3. Restart Claude Code or your terminal
 
 4. Test with verbose mode:
+
    ```bash
    claude -p --model haiku -d hooks --verbose "hi"
    ```
 
    You should see:
+
    ```
    [DEBUG] Found 1 hook commands to execute
    [DEBUG] Executing hook command: ~/.claude/ccnotify/ccnotify.py UserPromptSubmit
@@ -197,18 +210,21 @@ If you prefer to install manually, see the [Manual Installation](README.md#manua
 To uninstall CCNotify:
 
 **macOS/Linux:**
+
 ```bash
 cd CCNotify
 ./uninstall.sh
 ```
 
 **Windows:**
+
 ```powershell
 cd CCNotify
 .\uninstall.ps1
 ```
 
 **Options:**
+
 - `--keep-data` / `-KeepData`: Keep log files and database
 - `--silent` / `-Silent`: Non-interactive mode
 - `--dry-run` / `-DryRun`: Preview without making changes
@@ -246,4 +262,3 @@ After successful installation:
 4. Check the logs at `~/.claude/ccnotify/ccnotify.log` if you encounter issues
 
 Enjoy using CCNotify!
-
